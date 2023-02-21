@@ -11,7 +11,7 @@ import re
 import time
 import logging
 from lxml import html
-
+from urllib.parse import quote
 
 _logger = logging.getLogger(__name__)
 
@@ -47,6 +47,8 @@ def get_mock_file(url):
     fn = url.replace("***REMOVED***", "1234")  # Thank you, Github Action -_-!
     fn = re.sub(r"[^\w]", "_", fn)
     fn = re.sub(r"_key_[*A-Za-z0-9]+", "_key_8964", fn)
+    if len(fn) > 255:
+        fn = fn[:255]
     return fn
 
 
@@ -107,12 +109,15 @@ class BasicDownloader:
                     url, headers=self.headers, timeout=self.get_timeout()
                 )
                 if settings.DOWNLOADER_SAVEDIR:
-                    with open(
-                        settings.DOWNLOADER_SAVEDIR + "/" + get_mock_file(url),
-                        "w",
-                        encoding="utf-8",
-                    ) as fp:
-                        fp.write(resp.text)
+                    try:
+                        with open(
+                            settings.DOWNLOADER_SAVEDIR + "/" + get_mock_file(url),
+                            "w",
+                            encoding="utf-8",
+                        ) as fp:
+                            fp.write(resp.text)
+                    except:
+                        _logger.warn("Save downloaded data failed.")
             else:
                 resp = MockResponse(self.url)
             response_type = self.validate_response(resp)
@@ -138,24 +143,24 @@ class BasicDownloader:
 class ProxiedDownloader(BasicDownloader):
     def get_proxied_urls(self):
         urls = []
-        if settings.PROXYCRAWL_KEY is not None:
-            urls.append(
-                f"https://api.proxycrawl.com/?token={settings.PROXYCRAWL_KEY}&url={self.url}"
-            )
         if settings.SCRAPESTACK_KEY is not None:
             # urls.append(f'http://api.scrapestack.com/scrape?access_key={settings.SCRAPESTACK_KEY}&url={self.url}')
             urls.append(
-                f"http://api.scrapestack.com/scrape?keep_headers=1&access_key={settings.SCRAPESTACK_KEY}&url={self.url}"
+                f"http://api.scrapestack.com/scrape?keep_headers=1&access_key={settings.SCRAPESTACK_KEY}&url={quote(self.url)}"
+            )
+        if settings.PROXYCRAWL_KEY is not None:
+            urls.append(
+                f"https://api.proxycrawl.com/?token={settings.PROXYCRAWL_KEY}&url={quote(self.url)}"
             )
         if settings.SCRAPERAPI_KEY is not None:
             urls.append(
-                f"http://api.scraperapi.com/?api_key={settings.SCRAPERAPI_KEY}&url={self.url}"
+                f"http://api.scraperapi.com/?api_key={settings.SCRAPERAPI_KEY}&url={quote(self.url)}"
             )
         return urls
 
     def get_special_proxied_url(self):
         return (
-            f"{settings.LOCAL_PROXY}?url={self.url}"
+            f"{settings.LOCAL_PROXY}?url={quote(self.url)}"
             if settings.LOCAL_PROXY is not None
             else None
         )
@@ -225,17 +230,21 @@ class ImageDownloaderMixin:
         else:
             return RESPONSE_NETWORK_ERROR
 
-
-class BasicImageDownloader(ImageDownloaderMixin, BasicDownloader):
     @classmethod
-    def download_image(cls, image_url, page_url):
+    def download_image(cls, image_url, page_url, headers=None):
         imgdl = cls(image_url, page_url)
+        if headers is not None:
+            imgdl.headers = headers
         try:
             image = imgdl.download().content
             image_extention = imgdl.extention
             return image, image_extention
         except Exception:
             return None, None
+
+
+class BasicImageDownloader(ImageDownloaderMixin, BasicDownloader):
+    pass
 
 
 class ProxiedImageDownloader(ImageDownloaderMixin, ProxiedDownloader):

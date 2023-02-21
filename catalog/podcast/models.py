@@ -1,6 +1,16 @@
-from catalog.common import *
+from catalog.common.models import *
 from django.db import models
 from django.utils.translation import gettext_lazy as _
+
+
+class PodcastInSchema(ItemInSchema):
+    genre: list[str]
+    hosts: list[str]
+    official_site: str | None = None
+
+
+class PodcastSchema(PodcastInSchema, BaseSchema):
+    pass
 
 
 class Podcast(Item):
@@ -35,6 +45,13 @@ class Podcast(Item):
         "genre",
         "official_site",
     ]
+
+    @classmethod
+    def lookup_id_type_choices(cls):
+        id_types = [
+            IdType.RSS,
+        ]
+        return [(i.value, i.label) for i in id_types]
 
     @property
     def recent_episodes(self):

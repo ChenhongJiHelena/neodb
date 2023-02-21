@@ -1,108 +1,116 @@
-from ninja import NinjaAPI
 from .models import *
 from .common import *
 from .sites import *
-from django.conf import settings
-from datetime import date
 from ninja import Schema
-from typing import List, Optional
-from django.utils.baseconv import base62
-from django.shortcuts import render, get_object_or_404, redirect, reverse
 from django.http import Http404
-
-api = NinjaAPI(
-    title=settings.SITE_INFO["site_name"],
-    version="1.0.0",
-    description=f"{settings.SITE_INFO['site_name']} API <hr/><a href='{settings.APP_WEBSITE}'>Learn more</a>",
-)
+from common.api import api, Result
+from .search.views import enqueue_fetch
 
 
-class ItemIn(Schema):
-    title: str
-    brief: str
+class SearchResult(Schema):
+    items: list[ItemSchema]
 
 
-class ItemOut(Schema):
-    uuid: str
-    title: str
-    brief: str
-    url: str
-    api_url: str
-    category: str
+@api.post("/catalog/search", response={200: SearchResult, 400: Result})
+def search_item(request, query: str, category: ItemCategory | None = None):
+    query = query.strip()
+    if not query:
+        return 200, {"message": "Invalid query"}
+    result = Indexer.search(query, page=1, category=category)
+    return 200, {"items": result.items}
 
 
-class EditionIn(ItemIn):
-    subtitle: str = None
-    orig_title: str = None
-    author: list[str]
-    translator: list[str]
-    language: str = None
-    pub_house: str = None
-    pub_year: int = None
-    pub_month: int = None
-    binding: str = None
-    price: str = None
-    pages: str = None
-    series: str = None
-    imprint: str = None
-
-
-class EditionOut(ItemOut):
-    subtitle: str = None
-    orig_title: str = None
-    author: list[str]
-    translator: list[str]
-    language: str = None
-    pub_house: str = None
-    pub_year: int = None
-    pub_month: int = None
-    binding: str = None
-    price: str = None
-    pages: str = None
-    series: str = None
-    imprint: str = None
-
-
-@api.post("/catalog/fetch", response=ItemOut)
+@api.post("/catalog/fetch", response={200: ItemSchema, 202: Result})
 def fetch_item(request, url: str):
     site = SiteManager.get_site_by_url(url)
     if not site:
-        return Http404()
-    resource = site.get_resource_ready()
-    if not resource:
-        return Http404()
-    return site.get_item()
+        raise Http404(url)
+    item = site.get_item()
+    if item:
+        return 200, item
+    enqueue_fetch(url, False)
+    return 202, {"message": "Fetch in progress"}
 
 
-@api.post("/book/")
-def create_edition(request, payload: EditionIn):
-    edition = Edition.objects.create(**payload.dict())
-    return {"id": edition.uuid}
-
-
-@api.get("/book/{uuid}/", response=EditionOut)
+@api.get("/book/{uuid}/", response=EditionSchema)
 def get_edition(request, uuid: str):
-    edition = get_object_or_404(Edition, uid=base62.decode(uuid))
-    return edition
+    item = Edition.get_by_url(uuid)
+    if not item:
+        raise Http404(uuid)
+    return item
 
 
-# @api.get("/book", response=List[EditionOut])
+@api.get("/movie/{uuid}/", response=MovieSchema)
+def get_movie(request, uuid: str):
+    item = Movie.get_by_url(uuid)
+    if not item:
+        raise Http404(uuid)
+    return item
+
+
+@api.get("/tvshow/{uuid}/", response=TVShowSchema)
+def get_tvshow(request, uuid: str):
+    item = TVShow.get_by_url(uuid)
+    if not item:
+        raise Http404(uuid)
+    return item
+
+
+@api.get("/tvseason/{uuid}/", response=TVSeasonSchema)
+def get_tvseason(request, uuid: str):
+    item = TVSeason.get_by_url(uuid)
+    if not item:
+        raise Http404(uuid)
+    return item
+
+
+@api.get("/podcast/{uuid}/", response=PodcastSchema)
+def get_podcast(request, uuid: str):
+    item = Podcast.get_by_url(uuid)
+    if not item:
+        raise Http404(uuid)
+    return item
+
+
+@api.get("/album/{uuid}/", response=AlbumSchema)
+def get_album(request, uuid: str):
+    item = Album.get_by_url(uuid)
+    if not item:
+        raise Http404(uuid)
+    return item
+
+
+@api.get("/game/{uuid}/", response=GameSchema)
+def get_game(request, uuid: str):
+    item = Game.get_by_url(uuid)
+    if not item:
+        raise Http404(uuid)
+    return item
+
+
+# @api.get("/book", response=List[EditionSchema])
 # def list_editions(request):
 #     qs = Edition.objects.all()
 #     return qs
 
 
-@api.put("/book/{uuid}/")
-def update_edition(request, uuid: str, payload: EditionIn):
-    edition = get_object_or_404(Item, uid=base62.decode(uuid))
-    for attr, value in payload.dict().items():
-        setattr(edition, attr, value)
-    edition.save()
-    return {"success": True}
+# @api.post("/book/")
+# def create_edition(request, payload: EditionInSchema):
+#     edition = Edition.objects.create(**payload.dict())
+#     return {"id": edition.uuid}
 
 
-@api.delete("/book/{uuid}/")
-def delete_edition(request, uuid: str):
-    edition = get_object_or_404(Edition, uid=base62.decode(uuid))
-    edition.delete()
-    return {"success": True}
+# @api.put("/book/{uuid}/")
+# def update_edition(request, uuid: str, payload: EditionInSchema):
+#     edition = get_object_or_404(Item, uid=base62.decode(uuid))
+#     for attr, value in payload.dict().items():
+#         setattr(edition, attr, value)
+#     edition.save()
+#     return {"success": True}
+
+
+# @api.delete("/book/{uuid}/")
+# def delete_edition(request, uuid: str):
+#     edition = get_object_or_404(Edition, uid=base62.decode(uuid))
+#     edition.delete()
+#     return {"success": True}
